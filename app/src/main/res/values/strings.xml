@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">InteraConnect</string>
+    <string name="contact_button">Botón de contactos</string>
+    <string name="camera_button">Botón de cámara</string>
+    <string name="map_button">Botón de mapa</string>
+</resources>
