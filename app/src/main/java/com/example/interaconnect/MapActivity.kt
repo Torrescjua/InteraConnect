@@ -8,103 +8,135 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.location.Geocoder
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
 import android.os.Bundle
 import android.widget.EditText
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
-import com.google.android.gms.maps.CameraUpdateFactory
-import com.google.android.gms.maps.GoogleMap
-import com.google.android.gms.maps.OnMapReadyCallback
-import com.google.android.gms.maps.SupportMapFragment
-import com.google.android.gms.maps.model.LatLng
-import com.google.android.gms.maps.model.MapStyleOptions
-import com.google.android.gms.maps.model.MarkerOptions
-import com.google.maps.android.SphericalUtil
+import org.osmdroid.config.Configuration
+import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.util.GeoPoint
+import org.osmdroid.views.MapView
+import org.osmdroid.views.overlay.Marker
+import org.osmdroid.views.overlay.TilesOverlay
+import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 import java.util.*
 
-class MapActivity : AppCompatActivity(), OnMapReadyCallback, SensorEventListener {
+class MapActivity : AppCompatActivity(), SensorEventListener, LocationListener {
 
-    private lateinit var mMap: GoogleMap
+    private lateinit var mapView: MapView
     private lateinit var sensorManager: SensorManager
     private lateinit var lightSensor: Sensor
-    private var lastMarker: LatLng? = null
+    private lateinit var locationManager: LocationManager
+    private var myLocationOverlay: MyLocationNewOverlay? = null
+    private var lastMarker: GeoPoint? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_map)
 
-        // Inicializar el mapa
-        val mapFragment = supportFragmentManager.findFragmentById(R.id.map) as SupportMapFragment
-        mapFragment.getMapAsync(this)
+        // Initialize osmdroid
+        Configuration.getInstance().load(applicationContext, getSharedPreferences("osm_pref", Context.MODE_PRIVATE))
 
-        // Sensor de luz
+        // Initialize MapView
+        mapView = findViewById(R.id.map)
+        mapView.setTileSource(TileSourceFactory.MAPNIK)
+        mapView.setMultiTouchControls(true)
+
+        // Set default location and zoom level
+        val defaultLocation = GeoPoint(4.610224, -74.085860) // Example coordinates for Bogotá, Colombia
+        mapView.controller.setCenter(defaultLocation)
+        mapView.controller.setZoom(15.0) // Set an appropriate zoom level
+
+        // Initialize LocationManager
+        locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+
+        // Check location permissions
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), 1)
+        } else {
+            enableMyLocation()
+        }
+
+        // Initialize light sensor
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         lightSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT)!!
 
-        // Registrar el listener para el sensor de luz
+        // Register listener for the light sensor
         sensorManager.registerListener(this, lightSensor, SensorManager.SENSOR_DELAY_NORMAL)
-    }
 
-    override fun onMapReady(googleMap: GoogleMap) {
-        mMap = googleMap
-
-        // Solicitar permisos de ubicación
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
-            ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), 1)
-            return
-        }
-        mMap.isMyLocationEnabled = true
-
-        // LongClickListener para agregar un marcador
-        mMap.setOnMapLongClickListener { latLng ->
+        // Configure LongClickListener to add a marker
+        mapView.setOnLongClickListener { event ->
+            val projection = mapView.projection
+            val geoPoint = projection.fromPixels(event.x.toInt(), event.y.toInt()) as GeoPoint
             val geocoder = Geocoder(this, Locale.getDefault())
-            val addresses = geocoder.getFromLocation(latLng.latitude, latLng.longitude, 1)
+            val addresses = geocoder.getFromLocation(geoPoint.latitude, geoPoint.longitude, 1)
 
-            if (addresses != null) {
-                if (addresses.isNotEmpty()) {
-                    val address = addresses[0].getAddressLine(0)
-                    mMap.addMarker(MarkerOptions().position(latLng).title(address))
-                    lastMarker = latLng
-                    Toast.makeText(this, "Marcador agregado: $address", Toast.LENGTH_SHORT).show()
+            if (!addresses.isNullOrEmpty()) {
+                val address = addresses[0].getAddressLine(0)
+                addMarker(geoPoint, address)
+                lastMarker = geoPoint
+                Toast.makeText(this, "Marker added: $address", Toast.LENGTH_SHORT).show()
 
-                    // Calcular distancia si es necesario
-                    calculateDistance(latLng)
-                }
+                // Calculate distance to the marker
+                calculateDistance(geoPoint)
             }
+            true
         }
 
-        // Configurar el cuadro de texto para buscar direcciones
+        // Configure search box
         val searchBox: EditText = findViewById(R.id.searchBox)
         searchBox.setOnEditorActionListener { _, _, _ ->
             val location = searchBox.text.toString()
             if (location.isNotEmpty()) {
                 val geocoder = Geocoder(this, Locale.getDefault())
                 val addresses = geocoder.getFromLocationName(location, 1)
-                if (addresses != null) {
-                    if (addresses.isNotEmpty()) {
-                        val address = addresses[0]
-                        val latLng = LatLng(address.latitude, address.longitude)
-                        mMap.addMarker(MarkerOptions().position(latLng).title(location))
-                        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(latLng, 15f))
-                        lastMarker = latLng
-                        calculateDistance(latLng)
-                    }
+                if (!addresses.isNullOrEmpty()) {
+                    val address = addresses[0]
+                    val geoPoint = GeoPoint(address.latitude, address.longitude)
+                    addMarker(geoPoint, location)
+                    mapView.controller.setZoom(18.0) // Set a higher zoom level for better visibility
+                    mapView.controller.setCenter(geoPoint) // Move camera to the location
+                    lastMarker = geoPoint
+                    calculateDistance(geoPoint)
                 }
             }
             false
         }
     }
 
-    private fun calculateDistance(markerLatLng: LatLng) {
+    // Method to enable the current location
+    private fun enableMyLocation() {
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-            val lastLocation = mMap.myLocation
-            if (lastLocation != null) {
-                val currentLatLng = LatLng(lastLocation.latitude, lastLocation.longitude)
-                val distance = SphericalUtil.computeDistanceBetween(currentLatLng, markerLatLng)
-                Toast.makeText(this, "Distancia al marcador: ${distance.toInt()} metros", Toast.LENGTH_LONG).show()
-            }
+            myLocationOverlay = MyLocationNewOverlay(mapView)
+            myLocationOverlay?.enableMyLocation()
+            myLocationOverlay?.enableFollowLocation()
+            mapView.overlays.add(myLocationOverlay)
+
+            // Request location updates
+            locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 10f, this)
+        }
+    }
+
+    private fun addMarker(geoPoint: GeoPoint, title: String) {
+        val marker = Marker(mapView)
+        marker.position = geoPoint
+        marker.title = title
+        mapView.overlays.add(marker)
+        mapView.invalidate()
+    }
+
+    private fun calculateDistance(markerLatLng: GeoPoint) {
+        val myLocation = myLocationOverlay?.myLocation
+        if (myLocation != null) {
+            val currentLatLng = GeoPoint(myLocation.latitude, myLocation.longitude)
+            val distance = currentLatLng.distanceToAsDouble(markerLatLng)
+            Toast.makeText(this, "Distance to marker: ${distance.toInt()} meters", Toast.LENGTH_LONG).show()
+        } else {
+            Toast.makeText(this, "Current location not available", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -113,9 +145,11 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback, SensorEventListener
             if (it.sensor.type == Sensor.TYPE_LIGHT) {
                 val lightLevel = it.values[0]
                 if (lightLevel < 10) {
-                    mMap.setMapStyle(MapStyleOptions.loadRawResourceStyle(this, R.raw.dark_map_style))
+                    // Switch to dark mode if the light level is low
+                    mapView.overlayManager.tilesOverlay.setColorFilter(TilesOverlay.INVERT_COLORS)
                 } else {
-                    mMap.setMapStyle(MapStyleOptions.loadRawResourceStyle(this, R.raw.light_map_style))
+                    // Switch to light mode
+                    mapView.overlayManager.tilesOverlay.setColorFilter(null)
                 }
             }
         }
@@ -123,8 +157,15 @@ class MapActivity : AppCompatActivity(), OnMapReadyCallback, SensorEventListener
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
+    override fun onLocationChanged(location: Location) {
+        // Update the current location
+        myLocationOverlay?.enableMyLocation()
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         sensorManager.unregisterListener(this)
+        locationManager.removeUpdates(this)
+        myLocationOverlay?.disableMyLocation()
     }
 }
