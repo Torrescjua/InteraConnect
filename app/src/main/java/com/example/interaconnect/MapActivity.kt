@@ -46,9 +46,9 @@ class MapActivity : AppCompatActivity(), SensorEventListener, LocationListener {
         mapView.setTileSource(TileSourceFactory.MAPNIK)
         mapView.setMultiTouchControls(true)
 
-        // Set default location and zoom level
-        val defaultLocation = GeoPoint(4.610224, -74.085860) // Example coordinates for Bogotá, Colombia
-        mapView.controller.setCenter(defaultLocation)
+        // Set default location to Bogotá and zoom level
+        val bogotaLocation = GeoPoint(4.610224, -74.085860) // Coordinates for Bogotá, Colombia
+        mapView.controller.setCenter(bogotaLocation)
         mapView.controller.setZoom(15.0) // Set an appropriate zoom level
 
         // Initialize LocationManager
@@ -118,6 +118,13 @@ class MapActivity : AppCompatActivity(), SensorEventListener, LocationListener {
 
             // Request location updates
             locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 10f, this)
+
+            // Optionally, center the map only the first time
+            myLocationOverlay?.let {
+                if (it.myLocation != null) {
+                    mapView.controller.setCenter(GeoPoint(it.myLocation.latitude, it.myLocation.longitude))
+                }
+            }
         }
     }
 
@@ -125,9 +132,21 @@ class MapActivity : AppCompatActivity(), SensorEventListener, LocationListener {
         val marker = Marker(mapView)
         marker.position = geoPoint
         marker.title = title
+        marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
         mapView.overlays.add(marker)
-        mapView.invalidate()
+
+        // Explicitly center the map on the marker with a zoom level
+        mapView.controller.setCenter(geoPoint)
+        mapView.controller.setZoom(12.0)
+
+        // Calculate distance to the marker
+        calculateDistance(geoPoint)
+
+        mapView.invalidate() // Refresh the map
     }
+
+
+
 
     private fun calculateDistance(markerLatLng: GeoPoint) {
         val myLocation = myLocationOverlay?.myLocation
@@ -160,6 +179,7 @@ class MapActivity : AppCompatActivity(), SensorEventListener, LocationListener {
     override fun onLocationChanged(location: Location) {
         // Update the current location
         myLocationOverlay?.enableMyLocation()
+        // No centering here; just keep updating the location
     }
 
     override fun onDestroy() {
