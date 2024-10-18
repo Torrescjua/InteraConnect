@@ -75,6 +75,7 @@ class MapActivity : AppCompatActivity(), SensorEventListener, LocationListener {
 
         // Create a GestureDetector to detect long presses
         val gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+
             override fun onLongPress(e: MotionEvent) {
                 e.let {
                     // Get the GeoPoint where the long press occurred
@@ -98,12 +99,13 @@ class MapActivity : AppCompatActivity(), SensorEventListener, LocationListener {
             override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
                 return true // Handle single tap if needed
             }
+
         })
 
         // Set an OnTouchListener on the MapView to detect gestures
         mapView.setOnTouchListener { _, event ->
             gestureDetector.onTouchEvent(event)
-            true
+            false
         }
 
         // Configure search box
