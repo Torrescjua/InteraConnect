@@ -1,6 +1,7 @@
 package com.example.interaconnect
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.hardware.Sensor
@@ -20,6 +21,8 @@ import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
+import android.view.GestureDetector
+import android.view.MotionEvent
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.TilesOverlay
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
@@ -34,6 +37,8 @@ class MapActivity : AppCompatActivity(), SensorEventListener, LocationListener {
     private var myLocationOverlay: MyLocationNewOverlay? = null
     private var lastMarker: GeoPoint? = null
 
+
+    @SuppressLint("ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_map)
@@ -68,22 +73,36 @@ class MapActivity : AppCompatActivity(), SensorEventListener, LocationListener {
         // Register listener for the light sensor
         sensorManager.registerListener(this, lightSensor, SensorManager.SENSOR_DELAY_NORMAL)
 
-        // Configure LongClickListener to add a marker
-        mapView.setOnLongClickListener { event ->
-            val projection = mapView.projection
-            val geoPoint = projection.fromPixels(event.x.toInt(), event.y.toInt()) as GeoPoint
-            val geocoder = Geocoder(this, Locale.getDefault())
-            val addresses = geocoder.getFromLocation(geoPoint.latitude, geoPoint.longitude, 1)
+        // Create a GestureDetector to detect long presses
+        val gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onLongPress(e: MotionEvent) {
+                e.let {
+                    // Get the GeoPoint where the long press occurred
+                    val projection = mapView.projection
+                    val geoPoint = projection.fromPixels(e.x.toInt(), e.y.toInt()) as GeoPoint
+                    val geocoder = Geocoder(this@MapActivity, Locale.getDefault())
+                    val addresses = geocoder.getFromLocation(geoPoint.latitude, geoPoint.longitude, 1)
 
-            if (!addresses.isNullOrEmpty()) {
-                val address = addresses[0].getAddressLine(0)
-                addMarker(geoPoint, address)
-                lastMarker = geoPoint
-                Toast.makeText(this, "Marker added: $address", Toast.LENGTH_SHORT).show()
-
-                // Calculate distance to the marker
-                calculateDistance(geoPoint)
+                    if (!addresses.isNullOrEmpty()) {
+                        val address = addresses[0].getAddressLine(0)
+                        addMarker(geoPoint, address)
+                        lastMarker = geoPoint
+                        mapView.controller.setZoom(15.0) // Set a higher zoom level for better visibility
+                        mapView.controller.setCenter(geoPoint) // Move camera to the location
+                        // Calculate distance to the marker
+                        calculateDistance(geoPoint)
+                    }
+                }
             }
+
+            override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+                return true // Handle single tap if needed
+            }
+        })
+
+        // Set an OnTouchListener on the MapView to detect gestures
+        mapView.setOnTouchListener { _, event ->
+            gestureDetector.onTouchEvent(event)
             true
         }
 
@@ -98,7 +117,7 @@ class MapActivity : AppCompatActivity(), SensorEventListener, LocationListener {
                     val address = addresses[0]
                     val geoPoint = GeoPoint(address.latitude, address.longitude)
                     addMarker(geoPoint, location)
-                    mapView.controller.setZoom(18.0) // Set a higher zoom level for better visibility
+                    mapView.controller.setZoom(15.0) // Set a higher zoom level for better visibility
                     mapView.controller.setCenter(geoPoint) // Move camera to the location
                     lastMarker = geoPoint
                     calculateDistance(geoPoint)
@@ -119,10 +138,10 @@ class MapActivity : AppCompatActivity(), SensorEventListener, LocationListener {
             // Request location updates
             locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 10f, this)
 
-            // Optionally, center the map only the first time
-            myLocationOverlay?.let {
-                if (it.myLocation != null) {
-                    mapView.controller.setCenter(GeoPoint(it.myLocation.latitude, it.myLocation.longitude))
+            // Disable follow mode after the initial location is found
+            myLocationOverlay?.runOnFirstFix {
+                runOnUiThread {
+                    myLocationOverlay?.disableFollowLocation() // Disable auto-follow
                 }
             }
         }
@@ -153,7 +172,7 @@ class MapActivity : AppCompatActivity(), SensorEventListener, LocationListener {
         if (myLocation != null) {
             val currentLatLng = GeoPoint(myLocation.latitude, myLocation.longitude)
             val distance = currentLatLng.distanceToAsDouble(markerLatLng)
-            Toast.makeText(this, "Distance to marker: ${distance.toInt()} meters", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Distance to marker: ${distance.toInt()} meters", Toast.LENGTH_SHORT).show()
         } else {
             Toast.makeText(this, "Current location not available", Toast.LENGTH_SHORT).show()
         }
