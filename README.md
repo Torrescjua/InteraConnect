@@ -18,7 +18,7 @@ El código de InteraConnect está organizado en diferentes módulos para facilit
 
 Para ver InteraConnect en acción, puedes consultar nuestro video demostrativo en el siguiente enlace:
 
-[Link al Video]()
+[Link al Video](https://livejaverianaedu-my.sharepoint.com/:v:/g/personal/parrat-ga_javeriana_edu_co/Eegw1y8o0oxOgakLUCRGdAIBWoiTFdElxBZ44bR-T_2W7w?referrer=Teams.TEAMS-WEB&referrerScenario=MeetingChicletGetLink.view)
 
 ## Equipo de Desarrollo - Torino FC
 
